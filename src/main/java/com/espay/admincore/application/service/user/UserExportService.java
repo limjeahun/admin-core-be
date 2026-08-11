@@ -31,7 +31,7 @@ import java.util.Map;
 @Service
 @RequiredArgsConstructor
 public class UserExportService implements UserExportUseCase {
-    private static final String FILE_NAME = "users.xlsx";
+    private static final String            FILE_NAME = "users.xlsx";
     private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final UserSearchPort                userSearchPort;
@@ -55,19 +55,33 @@ public class UserExportService implements UserExportUseCase {
                     .map(user -> toExcelRow(user, roleNames))
                     .toList();
 
-            byte[] bytes = writer.write(WriteExcelDocumentCommand.of(
-                    ExcelDocumentType.USERS,
-                    userSummaries(command.query(), roleNames),
-                    rows
-            ));
-            fileHistoryPersistencePort.save(FileHistory.downloadSucceeded(
-                    command.userId(), "USERS", FILE_NAME,
-                    bytes.length, command.clientIp()));
-            return new ExcelDownloadResult(FILE_NAME, bytes);
+            byte[] bytes = writer.write(
+                    WriteExcelDocumentCommand.of(
+                        ExcelDocumentType.USERS,
+                        userSummaries(command.query(), roleNames),
+                        rows
+                    )
+            );
+            fileHistoryPersistencePort.save(
+                    FileHistory.downloadSucceeded(
+                            command.userId(),
+                            "USERS",
+                            FILE_NAME,
+                            bytes.length,
+                            command.clientIp()
+                    )
+            );
+            return ExcelDownloadResult.of(FILE_NAME, bytes);
         } catch (RuntimeException exception) {
-            fileHistoryPersistencePort.save(FileHistory.downloadFailed(
-                    command.userId(), "USERS", FILE_NAME,
-                    exception.getMessage(), command.clientIp()));
+            fileHistoryPersistencePort.save(
+                    FileHistory.downloadFailed(
+                            command.userId(),
+                            "USERS",
+                            FILE_NAME,
+                            exception.getMessage(),
+                            command.clientIp()
+                    )
+            );
             throw exception;
         }
     }
@@ -195,5 +209,9 @@ public class UserExportService implements UserExportUseCase {
      */
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
+    }
+
+    private void saveFileHistory() {
+
     }
 }
