@@ -24,10 +24,10 @@ spring:
           min-idle: 1
           max-wait: 2s
   mail:
-    host: ${SPRING_MAIL_HOST:118.128.208.148}
-    port: ${SPRING_MAIL_PORT:587}
-    username: ${SPRING_MAIL_USERNAME:server@easyshop.co.kr}
-    password: ${SPRING_MAIL_PASSWORD:kicc3124!}
+    host: ${SPRING_MAIL_HOST}
+    port: ${SPRING_MAIL_PORT}
+    username: ${SPRING_MAIL_USERNAME}
+    password: ${SPRING_MAIL_PASSWORD}
 
 security:
   jwt:
@@ -40,7 +40,7 @@ security:
     enabled: ${TRUSTED_PROXY_ENABLED:false}
   cors:
     allowed-origins:
-      - ${ADMIN_FRONTEND_ORIGIN:http://localhost:13011}
+      - ${ADMIN_FRONTEND_ORIGIN:http://localhost:13010}
   refresh-cookie:
     name: admin_refresh_token
     secure: true
@@ -55,7 +55,7 @@ otp:
 
 management:
   server:
-    port: 11086
+    port: 12086
   endpoints:
     web:
       exposure:
