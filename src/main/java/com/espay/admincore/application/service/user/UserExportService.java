@@ -1,22 +1,29 @@
 package com.espay.admincore.application.service.user;
 
+import com.espay.admincore.application.dto.file.ExcelDocumentType;
+import com.espay.admincore.application.dto.file.ExcelDownloadResult;
+import com.espay.admincore.application.dto.file.ExcelSummaryItem;
 import com.espay.admincore.application.dto.file.WriteExcelDocumentCommand;
-import com.espay.admincore.application.dto.history.ExcelDownloadResult;
 import com.espay.admincore.application.dto.user.DownloadUsersExcelCommand;
 import com.espay.admincore.application.dto.user.UserQuery;
 import com.espay.admincore.application.port.in.user.UserExportUseCase;
+import com.espay.admincore.application.port.out.file.ExcelDocumentWriterPort;
 import com.espay.admincore.application.port.out.history.FileHistoryPersistencePort;
 import com.espay.admincore.application.port.out.role.RolePersistencePort;
 import com.espay.admincore.application.port.out.user.UserSearchPort;
-import com.espay.admincore.application.port.out.file.ExcelDocumentWriterPort;
 import com.espay.admincore.domain.model.file.FileHistory;
 import com.espay.admincore.domain.model.user.AdminUser;
+import com.espay.admincore.domain.model.user.UserStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 조건에 맞는 전체 사용자와 권한명을 Excel로 만들고 다운로드 감사 이력을 기록하는 서비스.
@@ -25,10 +32,12 @@ import java.util.List;
 @RequiredArgsConstructor
 public class UserExportService implements UserExportUseCase {
     private static final String FILE_NAME = "users.xlsx";
-    private final UserSearchPort userSearchPort;
-    private final RolePersistencePort rolePersistencePort;
-    private final ExcelDocumentWriterPort writer;
-    private final FileHistoryPersistencePort fileHistoryPersistencePort;
+    private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+    private final UserSearchPort                userSearchPort;
+    private final RolePersistencePort           rolePersistencePort;
+    private final ExcelDocumentWriterPort       writer;
+    private final FileHistoryPersistencePort    fileHistoryPersistencePort;
 
     /**
      * 사용자를 100건씩 전체 조회해 Excel을 생성하고 성공·실패 파일 이력을 남긴다.
@@ -40,14 +49,17 @@ public class UserExportService implements UserExportUseCase {
     @Transactional
     public ExcelDownloadResult downloadUsersExcel(DownloadUsersExcelCommand command) {
         try {
-            List<? extends List<?>> rows = allUsers(command.query()).stream().map(user -> (List<?>) List.of(
-                    user.getLoginId(), user.getName(), user.getEmail(), text(user.getPhoneNo()), text(user.getDeptName()),
-                    rolePersistencePort.findById(user.getRoleId()).map(role -> role.getName()).orElse(""),
-                    user.getStatus().name(), user.getLastLoginAt() == null ? "" : user.getLastLoginAt()
-            )).toList();
-            byte[] bytes = writer.write(WriteExcelDocumentCommand.of("사용자", List.of(
-                    "아이디", "이름", "이메일", "휴대폰번호", "부서", "권한", "상태", "최종 로그인"
-            ), rows));
+            List<AdminUser> users = allUsers(command.query());
+            Map<String, String> roleNames = new HashMap<>();
+            List<List<String>> rows = users.stream()
+                    .map(user -> toExcelRow(user, roleNames))
+                    .toList();
+
+            byte[] bytes = writer.write(WriteExcelDocumentCommand.of(
+                    ExcelDocumentType.USERS,
+                    userSummaries(command.query(), roleNames),
+                    rows
+            ));
             fileHistoryPersistencePort.save(FileHistory.downloadSucceeded(
                     command.userId(), "USERS", FILE_NAME,
                     bytes.length, command.clientIp()));
@@ -58,6 +70,93 @@ public class UserExportService implements UserExportUseCase {
                     exception.getMessage(), command.clientIp()));
             throw exception;
         }
+    }
+
+    /**
+     * 사용자 한 명을 사용자 Excel 템플릿의 컬럼 순서에 맞춘 행으로 변환한다.
+     */
+    private List<String> toExcelRow(AdminUser user, Map<String, String> roleNames) {
+        return List.of(
+                user.getLoginId(),
+                user.getName(),
+                user.getEmail(),
+                text(user.getPhoneNo()),
+                text(user.getDeptName()),
+                roleName(user.getRoleId(), roleNames),
+                status(user.getStatus()),
+                dateTime(user.getLastLoginAt())
+        );
+    }
+
+    /**
+     * 사용자 검색 조건과 다운로드 시각을 문서 상단 요약값으로 만든다.
+     */
+    private List<ExcelSummaryItem> userSummaries(UserQuery query, Map<String, String> roleNames) {
+        return List.of(
+                ExcelSummaryItem.of("권한그룹", roleCondition(query.roleId(), roleNames)),
+                ExcelSummaryItem.of("사용여부", statusCondition(query.status())),
+                ExcelSummaryItem.of("조회조건", searchCondition(query.conditionType(), query.keyword())),
+                ExcelSummaryItem.of("다운로드 일시", DATE_TIME.format(LocalDateTime.now()))
+        );
+    }
+
+    /**
+     * 권한 ID를 표시명으로 변환하고 같은 다운로드 안에서는 조회 결과를 재사용한다.
+     */
+    private String roleName(String roleId, Map<String, String> roleNames) {
+        if (!hasText(roleId)) {
+            return "";
+        }
+        return roleNames.computeIfAbsent(roleId, id -> rolePersistencePort.findById(id)
+                .map(role -> role.getName())
+                .orElse(id));
+    }
+
+    /**
+     * 권한 검색 조건을 상단 요약에 표시할 문구로 변환한다.
+     */
+    private String roleCondition(String roleId, Map<String, String> roleNames) {
+        return hasText(roleId) ? roleName(roleId, roleNames) : "전체";
+    }
+
+    /**
+     * 사용자 상태를 화면에서 읽기 쉬운 한글 값으로 변환한다.
+     */
+    private String status(UserStatus status) {
+        return status == UserStatus.ACTIVE ? "이용중" : "이용중지";
+    }
+
+    /**
+     * 사용자 상태 검색 조건을 상단 요약에 표시할 문구로 변환한다.
+     */
+    private String statusCondition(String status) {
+        if (!hasText(status) || "ALL".equalsIgnoreCase(status) || "전체".equals(status)) {
+            return "전체";
+        }
+        return UserStatus.from(status) == UserStatus.ACTIVE ? "이용중" : "이용중지";
+    }
+
+    /**
+     * 검색 필드와 키워드를 상단 요약에 표시할 문구로 변환한다.
+     */
+    private String searchCondition(String conditionType, String keyword) {
+        if (!hasText(keyword)) {
+            return "전체";
+        }
+        String label = !hasText(conditionType) ? "전체" : switch (conditionType.trim().toUpperCase()) {
+            case "LOGIN_ID", "ID" -> "아이디";
+            case "NAME", "USER_NAME" -> "이름";
+            case "EMAIL" -> "이메일";
+            default -> "전체";
+        };
+        return label + " / " + keyword.trim();
+    }
+
+    /**
+     * 최종 로그인 시각을 Excel 표시 형식으로 변환한다.
+     */
+    private String dateTime(LocalDateTime value) {
+        return value == null ? "" : DATE_TIME.format(value);
     }
 
     /**
@@ -89,5 +188,12 @@ public class UserExportService implements UserExportUseCase {
      */
     private String text(String value) {
         return value == null ? "" : value;
+    }
+
+    /**
+     * 문자열에 공백이 아닌 내용이 있는지 확인한다.
+     */
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 }

@@ -1,7 +1,7 @@
 package com.espay.admincore.application.port.in.history;
 
 import com.espay.admincore.application.dto.history.DownloadHistoryExcelCommand;
-import com.espay.admincore.application.dto.history.ExcelDownloadResult;
+import com.espay.admincore.application.dto.file.ExcelDownloadResult;
 import com.espay.admincore.application.dto.history.FileHistoryQuery;
 import com.espay.admincore.application.dto.history.LoginHistoryQuery;
 

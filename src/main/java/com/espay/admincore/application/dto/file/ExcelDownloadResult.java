@@ -1,4 +1,4 @@
-package com.espay.admincore.application.dto.history;
+package com.espay.admincore.application.dto.file;
 
 /**
  * 생성이 완료된 Excel 문서의 다운로드 결과.

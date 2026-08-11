@@ -1,6 +1,6 @@
 package com.espay.admincore.application.port.in.user;
 
-import com.espay.admincore.application.dto.history.ExcelDownloadResult;
+import com.espay.admincore.application.dto.file.ExcelDownloadResult;
 import com.espay.admincore.application.dto.user.DownloadUsersExcelCommand;
 
 /**

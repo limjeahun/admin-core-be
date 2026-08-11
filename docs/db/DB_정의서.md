@@ -289,8 +289,6 @@ erDiagram
 
 ## 2. 테이블 CREATE DDL
 
-실행 기준 DDL은 `src/main/resources/db/schema/admin_core_schema.sql`과 동일하다.
-
 ```sql
 CREATE TABLE IF NOT EXISTS roles (
     role_id BIGINT NOT NULL AUTO_INCREMENT COMMENT '권한 고유번호',

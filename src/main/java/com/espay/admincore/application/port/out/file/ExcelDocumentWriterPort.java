@@ -8,9 +8,9 @@ import com.espay.admincore.application.dto.file.WriteExcelDocumentCommand;
 public interface ExcelDocumentWriterPort {
 
     /**
-     * 시트 이름, 열 제목과 행 데이터를 하나의 XLSX 문서로 직렬화한다.
+     * 문서 종류에 맞는 양식을 선택하고 전달받은 요약과 본문 데이터를 XLSX로 직렬화한다.
      *
-     * @param command 워크시트명, 열 제목과 행 데이터를 묶은 생성 명령
+     * @param command 문서 종류, 조회 조건 요약과 본문 행을 묶은 생성 명령
      * @return 생성된 XLSX 문서 바이트
      */
     byte[] write(WriteExcelDocumentCommand command);

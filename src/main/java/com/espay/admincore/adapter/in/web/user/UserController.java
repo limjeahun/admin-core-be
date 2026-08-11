@@ -3,7 +3,7 @@ package com.espay.admincore.adapter.in.web.user;
 import com.espay.admincore.adapter.in.web.user.request.*;
 import com.espay.admincore.adapter.in.web.user.response.UserListResponse;
 import com.espay.admincore.adapter.in.web.user.response.UserResponse;
-import com.espay.admincore.application.dto.history.ExcelDownloadResult;
+import com.espay.admincore.application.dto.file.ExcelDownloadResult;
 import com.espay.admincore.application.dto.user.DownloadUsersExcelCommand;
 import com.espay.admincore.application.port.in.user.UserCommandUseCase;
 import com.espay.admincore.application.port.in.user.UserExportUseCase;

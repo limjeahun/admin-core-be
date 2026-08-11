@@ -5,7 +5,7 @@ import com.espay.admincore.adapter.in.web.history.request.LoginHistorySearchRequ
 import com.espay.admincore.adapter.in.web.history.response.FileHistoryListResponse;
 import com.espay.admincore.adapter.in.web.history.response.LoginHistoryListResponse;
 import com.espay.admincore.application.dto.history.DownloadHistoryExcelCommand;
-import com.espay.admincore.application.dto.history.ExcelDownloadResult;
+import com.espay.admincore.application.dto.file.ExcelDownloadResult;
 import com.espay.admincore.application.port.in.history.FileHistoryQueryUseCase;
 import com.espay.admincore.application.port.in.history.HistoryExportUseCase;
 import com.espay.admincore.application.port.in.history.LoginHistoryQueryUseCase;

@@ -25,6 +25,7 @@ class CoreDependencyRuleTest {
     void applicationLayerDoesNotDependOnFrameworkOrAdapters() throws IOException {
         assertNoForbiddenImports(MAIN_SOURCE.resolve("application"), List.of(
                 "import jakarta.",
+                "import org.apache.poi.",
                 "import com.espay.admincore.adapter.",
                 "import com.espay.admincore.config."
         ));
@@ -64,6 +65,7 @@ class CoreDependencyRuleTest {
     void domainLayerDependsOnlyOnJavaAndDomainTypes() throws IOException {
         assertNoForbiddenImports(MAIN_SOURCE.resolve("domain"), List.of(
                 "import org.springframework.",
+                "import org.apache.poi.",
                 "import jakarta.",
                 "import com.espay.admincore.application.",
                 "import com.espay.admincore.adapter.",
