@@ -1,9 +1,6 @@
 package com.espay.admincore.application.service.user;
 
-import com.espay.admincore.application.dto.file.ExcelDocumentType;
 import com.espay.admincore.application.dto.file.ExcelDownloadResult;
-import com.espay.admincore.application.dto.file.ExcelSummaryItem;
-import com.espay.admincore.application.dto.file.WriteExcelDocumentCommand;
 import com.espay.admincore.application.dto.user.DownloadUsersExcelCommand;
 import com.espay.admincore.application.dto.user.UserQuery;
 import com.espay.admincore.application.port.in.user.UserExportUseCase;
@@ -11,6 +8,9 @@ import com.espay.admincore.application.port.out.file.ExcelDocumentWriterPort;
 import com.espay.admincore.application.port.out.history.FileHistoryPersistencePort;
 import com.espay.admincore.application.port.out.role.RolePersistencePort;
 import com.espay.admincore.application.port.out.user.UserSearchPort;
+import com.espay.admincore.common.excel.ExcelColumn;
+import com.espay.admincore.common.excel.ExcelDocument;
+import com.espay.admincore.common.excel.ExcelPipeline;
 import com.espay.admincore.domain.model.file.FileHistory;
 import com.espay.admincore.domain.model.user.AdminUser;
 import com.espay.admincore.domain.model.user.UserStatus;
@@ -18,8 +18,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -31,8 +29,7 @@ import java.util.Map;
 @Service
 @RequiredArgsConstructor
 public class UserExportService implements UserExportUseCase {
-    private static final String            FILE_NAME = "users.xlsx";
-    private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final String FILE_NAME = "users.xlsx";
 
     private final UserSearchPort                userSearchPort;
     private final RolePersistencePort           rolePersistencePort;
@@ -49,19 +46,9 @@ public class UserExportService implements UserExportUseCase {
     @Transactional
     public ExcelDownloadResult downloadUsersExcel(DownloadUsersExcelCommand command) {
         try {
-            List<AdminUser> users = allUsers(command.query());
-            Map<String, String> roleNames = new HashMap<>();
-            List<List<String>> rows = users.stream()
-                    .map(user -> toExcelRow(user, roleNames))
-                    .toList();
-
-            byte[] bytes = writer.write(
-                    WriteExcelDocumentCommand.of(
-                        ExcelDocumentType.USERS,
-                        userSummaries(command.query(), roleNames),
-                        rows
-                    )
-            );
+            UserQuery query = command.query();
+            List<AdminUser> users = allUsers(query);
+            byte[] bytes = writer.write(usersDocument(query, users));
             fileHistoryPersistencePort.save(
                     FileHistory.downloadSucceeded(
                             command.userId(),
@@ -87,31 +74,34 @@ public class UserExportService implements UserExportUseCase {
     }
 
     /**
-     * 사용자 한 명을 사용자 Excel 템플릿의 컬럼 순서에 맞춘 행으로 변환한다.
+     * 조회가 끝난 사용자 목록에 요약과 컬럼 정의를 적용해 Excel 문서를 생성한다.
+     *
+     * @param query 사용자 검색 조건
+     * @param users Excel에 포함할 전체 사용자 목록
+     * @return 출력 어댑터에 전달할 사용자 Excel 문서
      */
-    private List<String> toExcelRow(AdminUser user, Map<String, String> roleNames) {
-        return List.of(
-                user.getLoginId(),
-                user.getName(),
-                user.getEmail(),
-                text(user.getPhoneNo()),
-                text(user.getDeptName()),
-                roleName(user.getRoleId(), roleNames),
-                status(user.getStatus()),
-                dateTime(user.getLastLoginAt())
-        );
-    }
+    private ExcelDocument usersDocument(UserQuery query, List<AdminUser> users) {
+        Map<String, String> roleNames = new HashMap<>();
 
-    /**
-     * 사용자 검색 조건과 다운로드 시각을 문서 상단 요약값으로 만든다.
-     */
-    private List<ExcelSummaryItem> userSummaries(UserQuery query, Map<String, String> roleNames) {
-        return List.of(
-                ExcelSummaryItem.of("권한그룹", roleCondition(query.roleId(), roleNames)),
-                ExcelSummaryItem.of("사용여부", statusCondition(query.status())),
-                ExcelSummaryItem.of("조회조건", searchCondition(query.conditionType(), query.keyword())),
-                ExcelSummaryItem.of("다운로드 일시", DATE_TIME.format(LocalDateTime.now()))
-        );
+        return ExcelPipeline.from(users)
+                .sheetName("users")
+                .title("사용자 관리")
+                .noDataMessage("조회된 사용자가 없습니다.")
+                .generationErrorMessage("사용자 Excel 파일 생성에 실패했습니다.")
+                .summary("권한그룹", roleCondition(query.roleId(), roleNames))
+                .summary("사용여부", statusCondition(query.status()))
+                .summary("조회조건", searchCondition(query.conditionType(), query.keyword()))
+                .summaryNow("다운로드 일시")
+                .column(ExcelColumn.text("아이디", 18, AdminUser::getLoginId))
+                .column(ExcelColumn.text("이름", 16, AdminUser::getName))
+                .column(ExcelColumn.text("이메일", 30, AdminUser::getEmail))
+                .column(ExcelColumn.text("휴대폰번호", 18, AdminUser::getPhoneNo).centered())
+                .column(ExcelColumn.text("부서", 18, AdminUser::getDeptName))
+                .column(ExcelColumn.formatted("권한", 18, AdminUser::getRoleId,
+                        roleId -> roleName(roleId, roleNames)))
+                .column(ExcelColumn.formatted("상태", 14, AdminUser::getStatus, this::status).centered())
+                .column(ExcelColumn.dateTime("최종 로그인", 22, AdminUser::getLastLoginAt).centered())
+                .build();
     }
 
     /**
@@ -167,13 +157,6 @@ public class UserExportService implements UserExportUseCase {
     }
 
     /**
-     * 최종 로그인 시각을 Excel 표시 형식으로 변환한다.
-     */
-    private String dateTime(LocalDateTime value) {
-        return value == null ? "" : DATE_TIME.format(value);
-    }
-
-    /**
      * 검색 결과가 끝날 때까지 페이지 크기 100으로 사용자를 반복 조회한다.
      *
      * @param source 원본 사용자 검색 조건
@@ -183,8 +166,14 @@ public class UserExportService implements UserExportUseCase {
         List<AdminUser> result = new ArrayList<>();
         int page = 0;
         while (true) {
-            UserQuery query = UserQuery.of(source.roleId(), source.status(), source.conditionType(),
-                    source.keyword(), page, 100);
+            UserQuery query = UserQuery.of(
+                    source.roleId(),
+                    source.status(),
+                    source.conditionType(),
+                    source.keyword(),
+                    page,
+                    100
+            );
             var batch = userSearchPort.findPage(query);
             result.addAll(batch);
             if (batch.size() < 100) {
@@ -195,23 +184,10 @@ public class UserExportService implements UserExportUseCase {
     }
 
     /**
-     * Excel 셀에 {@code null} 대신 빈 문자열을 기록한다.
-     *
-     * @param value 원본 문자열
-     * @return 원본 문자열 또는 빈 문자열
-     */
-    private String text(String value) {
-        return value == null ? "" : value;
-    }
-
-    /**
      * 문자열에 공백이 아닌 내용이 있는지 확인한다.
      */
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
     }
 
-    private void saveFileHistory() {
-
-    }
 }

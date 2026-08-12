@@ -1,9 +1,6 @@
 package com.espay.admincore.application.service.history;
 
-import com.espay.admincore.application.dto.file.ExcelDocumentType;
 import com.espay.admincore.application.dto.file.ExcelDownloadResult;
-import com.espay.admincore.application.dto.file.ExcelSummaryItem;
-import com.espay.admincore.application.dto.file.WriteExcelDocumentCommand;
 import com.espay.admincore.application.dto.history.DownloadHistoryExcelCommand;
 import com.espay.admincore.application.dto.history.FileHistoryQuery;
 import com.espay.admincore.application.dto.history.LoginHistoryQuery;
@@ -11,15 +8,16 @@ import com.espay.admincore.application.port.in.history.HistoryExportUseCase;
 import com.espay.admincore.application.port.out.file.ExcelDocumentWriterPort;
 import com.espay.admincore.application.port.out.history.FileHistoryPersistencePort;
 import com.espay.admincore.application.port.out.history.LoginHistoryPersistencePort;
+import com.espay.admincore.common.excel.ExcelColumn;
+import com.espay.admincore.common.excel.ExcelDocument;
+import com.espay.admincore.common.excel.ExcelFormatters;
+import com.espay.admincore.common.excel.ExcelPipeline;
 import com.espay.admincore.domain.model.file.FileHistory;
 import com.espay.admincore.domain.model.history.LoginHistory;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -30,9 +28,6 @@ import java.util.Locale;
 @Service
 @RequiredArgsConstructor
 public class HistoryExportService implements HistoryExportUseCase {
-    private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-    private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-
     private final LoginHistoryPersistencePort loginHistoryPort;
     private final FileHistoryPersistencePort fileHistoryPort;
     private final ExcelDocumentWriterPort writer;
@@ -50,14 +45,9 @@ public class HistoryExportService implements HistoryExportUseCase {
     public ExcelDownloadResult downloadLoginHistoryExcel(DownloadHistoryExcelCommand<LoginHistoryQuery> command) {
         String fileName = "login-history.xlsx";
         try {
-            List<List<String>> rows = allLoginHistory(command.query()).stream()
-                    .map(this::toLoginHistoryExcelRow)
-                    .toList();
-            byte[] bytes = writer.write(WriteExcelDocumentCommand.of(
-                    ExcelDocumentType.LOGIN_HISTORY,
-                    loginHistorySummaries(command.query()),
-                    rows
-            ));
+            LoginHistoryQuery query = command.query();
+            List<LoginHistory> histories = allLoginHistory(query);
+            byte[] bytes = writer.write(loginHistoryDocument(query, histories));
             fileHistoryPort.save(FileHistory.downloadSucceeded(
                     command.userId(), "LOGIN_HISTORY", fileName,
                     bytes.length, command.clientIp()));
@@ -83,14 +73,9 @@ public class HistoryExportService implements HistoryExportUseCase {
     public ExcelDownloadResult downloadFileHistoryExcel(DownloadHistoryExcelCommand<FileHistoryQuery> command) {
         String fileName = "file-history.xlsx";
         try {
-            List<List<String>> rows = allFileHistory(command.query()).stream()
-                    .map(this::toFileHistoryExcelRow)
-                    .toList();
-            byte[] bytes = writer.write(WriteExcelDocumentCommand.of(
-                    ExcelDocumentType.FILE_HISTORY,
-                    fileHistorySummaries(command.query()),
-                    rows
-            ));
+            FileHistoryQuery query = command.query();
+            List<FileHistory> histories = allFileHistory(query);
+            byte[] bytes = writer.write(fileHistoryDocument(query, histories));
             fileHistoryPort.save(FileHistory.downloadSucceeded(
                     command.userId(), "FILE_HISTORY", fileName,
                     bytes.length, command.clientIp()));
@@ -104,63 +89,67 @@ public class HistoryExportService implements HistoryExportUseCase {
     }
 
     /**
-     * 로그인 이력을 로그인 이력 Excel 템플릿의 컬럼 순서에 맞춘 행으로 변환한다.
+     * 조회가 끝난 로그인 이력에 요약과 컬럼 정의를 적용해 Excel 문서를 생성한다.
+     *
+     * @param query 로그인 이력 검색 조건
+     * @param histories Excel에 포함할 전체 로그인 이력
+     * @return 출력 어댑터에 전달할 로그인 이력 Excel 문서
      */
-    private List<String> toLoginHistoryExcelRow(LoginHistory history) {
-        return List.of(
-                dateTime(history.getCreatedAt()),
-                text(history.getUserName()),
-                displayId(history),
-                authStep(history.getAuthStep()),
-                result(history.isSuccess()),
-                text(history.getLoginReason()),
-                text(history.getFailReason()),
-                text(history.getClientIp()),
-                text(history.getUserAgent())
-        );
+    private ExcelDocument loginHistoryDocument(LoginHistoryQuery query, List<LoginHistory> histories) {
+        return ExcelPipeline.from(histories)
+                .sheetName("로그인 이력")
+                .title("로그인/인증 이력 조회")
+                .noDataMessage("조회된 로그인/인증 이력이 없습니다.")
+                .generationErrorMessage("이력 Excel 파일 생성에 실패했습니다.")
+                .summaryDateRange("조회 기간", query.fromDate(), query.toDate())
+                .summary("인증 단계", authStepCondition(query.authStep()))
+                .summary("처리 결과", resultCondition(query.success()))
+                .summary("조회 조건", searchCondition(query.conditionType(), query.keyword()))
+                .summaryNow("다운로드 일시")
+                .column(ExcelColumn.dateTime("접속일시", 20, LoginHistory::getCreatedAt).centered())
+                .column(ExcelColumn.text("이름", 16, LoginHistory::getUserName))
+                .column(ExcelColumn.text("아이디", 18, this::displayId))
+                .column(ExcelColumn.formatted("인증단계", 18, LoginHistory::getAuthStep, this::authStep).centered())
+                .column(ExcelColumn.formatted("처리결과", 14, LoginHistory::isSuccess, this::result)
+                        .centered()
+                        .highlightFailures("실패"))
+                .column(ExcelColumn.text("접속사유", 26, LoginHistory::getLoginReason))
+                .column(ExcelColumn.text("실패사유", 24, LoginHistory::getFailReason))
+                .column(ExcelColumn.text("접속IP", 18, LoginHistory::getClientIp).centered())
+                .column(ExcelColumn.text("User-Agent", 40, LoginHistory::getUserAgent))
+                .build();
     }
 
     /**
-     * 파일 이력을 파일 이력 Excel 템플릿의 컬럼 순서에 맞춘 행으로 변환한다.
+     * 조회가 끝난 파일 이력에 요약과 컬럼 정의를 적용해 Excel 문서를 생성한다.
+     *
+     * @param query 파일 이력 검색 조건
+     * @param histories Excel에 포함할 전체 파일 이력
+     * @return 출력 어댑터에 전달할 파일 이력 Excel 문서
      */
-    private List<String> toFileHistoryExcelRow(FileHistory history) {
-        return List.of(
-                dateTime(history.getCreatedAt()),
-                text(history.getLoginId()),
-                text(history.getClientIp()),
-                ioType(history.getIoType()),
-                text(history.getFileName()),
-                fileSize(history.getFileSize()),
-                text(history.getMenuName()),
-                result(history.isSuccess()),
-                text(history.getFailReason())
-        );
-    }
-
-    /**
-     * 로그인 이력 검색 조건과 다운로드 시각을 문서 상단 요약값으로 만든다.
-     */
-    private List<ExcelSummaryItem> loginHistorySummaries(LoginHistoryQuery query) {
-        return List.of(
-                ExcelSummaryItem.of("조회 기간", dateRange(query.fromDate(), query.toDate())),
-                ExcelSummaryItem.of("인증 단계", authStepCondition(query.authStep())),
-                ExcelSummaryItem.of("처리 결과", resultCondition(query.success())),
-                ExcelSummaryItem.of("조회 조건", searchCondition(query.conditionType(), query.keyword())),
-                ExcelSummaryItem.of("다운로드 일시", DATE_TIME.format(LocalDateTime.now()))
-        );
-    }
-
-    /**
-     * 파일 이력 검색 조건과 다운로드 시각을 문서 상단 요약값으로 만든다.
-     */
-    private List<ExcelSummaryItem> fileHistorySummaries(FileHistoryQuery query) {
-        return List.of(
-                ExcelSummaryItem.of("조회 기간", dateRange(query.fromDate(), query.toDate())),
-                ExcelSummaryItem.of("구분", ioTypeCondition(query.ioType())),
-                ExcelSummaryItem.of("처리 결과", resultCondition(query.success())),
-                ExcelSummaryItem.of("조회 조건", searchCondition(query.conditionType(), query.keyword())),
-                ExcelSummaryItem.of("다운로드 일시", DATE_TIME.format(LocalDateTime.now()))
-        );
+    private ExcelDocument fileHistoryDocument(FileHistoryQuery query, List<FileHistory> histories) {
+        return ExcelPipeline.from(histories)
+                .sheetName("파일 이력")
+                .title("파일 이력 조회")
+                .noDataMessage("조회된 파일 이력이 없습니다.")
+                .generationErrorMessage("이력 Excel 파일 생성에 실패했습니다.")
+                .summaryDateRange("조회 기간", query.fromDate(), query.toDate())
+                .summary("구분", ioTypeCondition(query.ioType()))
+                .summary("처리 결과", resultCondition(query.success()))
+                .summary("조회 조건", searchCondition(query.conditionType(), query.keyword()))
+                .summaryNow("다운로드 일시")
+                .column(ExcelColumn.dateTime("처리일시", 20, FileHistory::getCreatedAt).centered())
+                .column(ExcelColumn.text("아이디", 18, FileHistory::getLoginId))
+                .column(ExcelColumn.text("접속IP", 18, FileHistory::getClientIp).centered())
+                .column(ExcelColumn.formatted("구분", 12, FileHistory::getIoType, this::ioType).centered())
+                .column(ExcelColumn.text("파일명", 32, FileHistory::getFileName))
+                .column(ExcelColumn.fileSize("용량(KB)", 14, FileHistory::getFileSize).centered())
+                .column(ExcelColumn.text("메뉴", 20, FileHistory::getMenuName))
+                .column(ExcelColumn.formatted("처리결과", 14, FileHistory::isSuccess, this::result)
+                        .centered()
+                        .highlightFailures("실패"))
+                .column(ExcelColumn.text("실패사유", 28, FileHistory::getFailReason))
+                .build();
     }
 
     /**
@@ -204,7 +193,9 @@ public class HistoryExportService implements HistoryExportUseCase {
      * @return Excel에 표시할 로그인 ID
      */
     private String displayId(LoginHistory history) {
-        return history.getLoginId() == null ? text(history.getInputId()) : history.getLoginId();
+        return history.getLoginId() == null
+                ? ExcelFormatters.text(history.getInputId())
+                : history.getLoginId();
     }
 
     /**
@@ -260,22 +251,6 @@ public class HistoryExportService implements HistoryExportUseCase {
     }
 
     /**
-     * 조회 시작일과 종료일을 하나의 기간 표시값으로 변환한다.
-     */
-    private String dateRange(LocalDate fromDate, LocalDate toDate) {
-        if (fromDate == null && toDate == null) {
-            return "전체";
-        }
-        if (fromDate == null) {
-            return "~ " + DATE.format(toDate);
-        }
-        if (toDate == null) {
-            return DATE.format(fromDate) + " ~";
-        }
-        return DATE.format(fromDate) + " ~ " + DATE.format(toDate);
-    }
-
-    /**
      * 검색 필드와 키워드를 상단 요약에 표시할 문구로 변환한다.
      */
     private String searchCondition(String conditionType, String keyword) {
@@ -290,30 +265,6 @@ public class HistoryExportService implements HistoryExportUseCase {
             default -> "전체";
         };
         return label + " / " + keyword.trim();
-    }
-
-    /**
-     * 파일 크기를 천 단위 구분자가 포함된 KB 값으로 변환한다.
-     */
-    private String fileSize(Long value) {
-        return value == null ? "" : String.format(Locale.KOREA, "%,dKB", value);
-    }
-
-    /**
-     * 시각을 Excel 표시 형식으로 변환한다.
-     */
-    private String dateTime(LocalDateTime value) {
-        return value == null ? "" : DATE_TIME.format(value);
-    }
-
-    /**
-     * Excel 셀에 {@code null} 대신 빈 문자열을 기록한다.
-     *
-     * @param value 원본 문자열
-     * @return 원본 문자열 또는 빈 문자열
-     */
-    private String text(String value) {
-        return value == null ? "" : value;
     }
 
     /**

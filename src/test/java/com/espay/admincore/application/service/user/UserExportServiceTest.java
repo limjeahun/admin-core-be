@@ -1,13 +1,12 @@
 package com.espay.admincore.application.service.user;
 
-import com.espay.admincore.application.dto.file.ExcelDocumentType;
-import com.espay.admincore.application.dto.file.WriteExcelDocumentCommand;
 import com.espay.admincore.application.dto.user.DownloadUsersExcelCommand;
 import com.espay.admincore.application.dto.user.UserQuery;
 import com.espay.admincore.application.port.out.file.ExcelDocumentWriterPort;
 import com.espay.admincore.application.port.out.history.FileHistoryPersistencePort;
 import com.espay.admincore.application.port.out.role.RolePersistencePort;
 import com.espay.admincore.application.port.out.user.UserSearchPort;
+import com.espay.admincore.common.excel.ExcelDocument;
 import com.espay.admincore.domain.model.file.FileHistory;
 import com.espay.admincore.domain.model.role.AdminRole;
 import com.espay.admincore.domain.model.user.AdminUser;
@@ -63,16 +62,20 @@ class UserExportServiceTest {
         AdminRole role = AdminRole.reconstitute("1", "MASTER", "마스터 권한", true, createdAt, createdAt);
         when(userSearchPort.findPage(any(UserQuery.class))).thenReturn(List.of(user));
         when(rolePersistencePort.findById("1")).thenReturn(Optional.of(role));
-        when(writer.write(any(WriteExcelDocumentCommand.class))).thenReturn(new byte[]{1, 2, 3});
+        when(writer.write(any(ExcelDocument.class))).thenReturn(new byte[]{1, 2, 3});
 
         service.downloadUsersExcel(DownloadUsersExcelCommand.of(query, "7", "127.0.0.1"));
 
-        ArgumentCaptor<WriteExcelDocumentCommand> documentCaptor =
-                ArgumentCaptor.forClass(WriteExcelDocumentCommand.class);
+        ArgumentCaptor<ExcelDocument> documentCaptor =
+                ArgumentCaptor.forClass(ExcelDocument.class);
         verify(writer).write(documentCaptor.capture());
-        WriteExcelDocumentCommand document = documentCaptor.getValue();
+        ExcelDocument document = documentCaptor.getValue();
 
-        assertThat(document.documentType()).isEqualTo(ExcelDocumentType.USERS);
+        assertThat(document.sheetName()).isEqualTo("users");
+        assertThat(document.title()).isEqualTo("사용자 관리");
+        assertThat(document.columns())
+                .extracting(ExcelDocument.Column::header)
+                .containsExactly("아이디", "이름", "이메일", "휴대폰번호", "부서", "권한", "상태", "최종 로그인");
         assertThat(document.summaries())
                 .extracting(summary -> summary.label() + "=" + summary.value())
                 .contains("권한그룹=MASTER", "사용여부=이용중", "조회조건=이름 / 관리자");
