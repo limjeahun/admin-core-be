@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
@@ -32,7 +33,6 @@ class ExcelPipelineTest {
                 .sheetName("test")
                 .title("파이프라인 테스트")
                 .noDataMessage("데이터가 없습니다.")
-                .generationErrorMessage("Excel 생성에 실패했습니다.")
                 .summaryDateRange(
                         "조회 기간",
                         LocalDate.of(2026, 8, 1),
@@ -67,8 +67,7 @@ class ExcelPipelineTest {
         ExcelPipeline<Row> base = ExcelPipeline.<Row>from(List.of())
                 .sheetName("test")
                 .title("불변성 테스트")
-                .noDataMessage("데이터가 없습니다.")
-                .generationErrorMessage("Excel 생성에 실패했습니다.");
+                .noDataMessage("데이터가 없습니다.");
 
         ExcelPipeline<Row> configured = base.column(ExcelColumn.text("이름", 20, Row::name));
 
@@ -92,11 +91,73 @@ class ExcelPipelineTest {
                 .sheetName("variance")
                 .title("Wildcard 테스트")
                 .noDataMessage("데이터가 없습니다.")
-                .generationErrorMessage("Excel 생성에 실패했습니다.")
                 .column(baseColumn)
                 .build();
 
         assertThat(document.rows()).containsExactly(List.of("7"));
+    }
+
+    @Test
+    void from_이후_원본_목록이_바뀌어도_파이프라인의_행은_바뀌지_않는다() {
+        List<Row> source = new ArrayList<>();
+        source.add(new Row("처음", null));
+
+        ExcelPipeline<Row> pipeline = ExcelPipeline.from(source)
+                .sheetName("snapshot")
+                .title("불변 스냅샷")
+                .noDataMessage("데이터가 없습니다.")
+                .column(ExcelColumn.text("이름", 20, Row::name));
+
+        source.add(new Row("나중", null));
+
+        assertThat(pipeline.build().rows()).containsExactly(List.of("처음"));
+        assertThat(pipeline.build().rows()).containsExactly(List.of("처음"));
+    }
+
+    @Test
+    void 하위_타입_행_목록을_상위_타입_파이프라인으로_받을_수_있다() {
+        List<ChildRow> children = List.of(new ChildRow(11));
+
+        ExcelDocument document = ExcelPipeline.<BaseRow>from(children)
+                .sheetName("producer")
+                .title("Generic 테스트")
+                .noDataMessage("데이터가 없습니다.")
+                .column(ExcelColumn.formatted("값", 10, BaseRow::value, Object::toString))
+                .build();
+
+        assertThat(document.rows()).containsExactly(List.of("11"));
+    }
+
+    @Test
+    void 컬럼_메서드_체인은_원본_컬럼을_변경하지_않는다() {
+        ExcelColumn<Row> original = ExcelColumn.text("이름", 20, Row::name);
+
+        ExcelColumn<Row> configured = original.centered().highlightFailures("실패");
+
+        assertThat(original.definition().alignment()).isEqualTo(ExcelAlignment.LEFT);
+        assertThat(original.definition().failureKeywords()).isEmpty();
+        assertThat(configured.definition().alignment()).isEqualTo(ExcelAlignment.CENTER);
+        assertThat(configured.definition().failureKeywords()).containsExactly("실패");
+    }
+
+    @Test
+    void Excel에서_허용하지_않는_시트_이름을_거부한다() {
+        ExcelPipeline<Row> pipeline = ExcelPipeline.<Row>from(List.of())
+                .sheetName("invalid/name")
+                .title("시트명 검증")
+                .noDataMessage("데이터가 없습니다.")
+                .column(ExcelColumn.text("이름", 20, Row::name));
+
+        assertThatThrownBy(pipeline::build)
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Excel sheetName contains an invalid character");
+    }
+
+    @Test
+    void Excel에서_허용하는_범위를_넘는_컬럼_너비를_거부한다() {
+        assertThatThrownBy(() -> ExcelColumn.text("이름", 256, Row::name))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Excel column width must not exceed 255");
     }
 
     private record Row(String name, LocalDateTime createdAt) {

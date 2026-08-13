@@ -66,7 +66,7 @@ public class OtpVerificationService implements OtpVerifyUseCase {
         consumePreAuthState(claims, user.getId());
         // 5. 최종 로그인 토큰을 발급하고 OTP 성공 이력을 저장한다.
         LoginResult result = issueTokens(user, role);
-        userPersistencePort.save(user.updateLastLoginAt(LocalDateTime.now()));
+        userPersistencePort.save(user.recordSuccessfulLogin(LocalDateTime.now()));
         loginHistoryPersistencePort.save(
                 LoginHistory.otpSucceeded(
                         user.getId(), loginReason, user.getLoginId(), command.clientIp(), command.userAgent()

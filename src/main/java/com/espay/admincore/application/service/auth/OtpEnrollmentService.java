@@ -59,7 +59,7 @@ public class OtpEnrollmentService implements OtpBarcodeIssueUseCase {
                 SendOtpBarcodeEmailCommand.of(user.getEmail(), user.getName(), qrCode)
         );
         userPersistencePort.save(
-                user.updateOtpSecret(secret)
+                user.registerOtpSecret(secret)
         );
     }
 

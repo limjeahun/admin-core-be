@@ -33,9 +33,7 @@ public class HistoryExportService implements HistoryExportUseCase {
     private final ExcelDocumentWriterPort writer;
 
     /**
-     * 조건에 맞는 모든 로그인·OTP 이력을 100건씩 조회해 Excel 문서로 생성한다.
-     *
-     * <p>생성 성공과 실패 모두 LOGIN_HISTORY 메뉴의 다운로드 감사 이력으로 기록한다.</p>
+     * 로그인·OTP 이력을 Excel로 만들고 성공과 실패 감사 이력을 기록한다.
      *
      * @param command 로그인 이력 검색 조건과 다운로드 사용자·IP
      * @return 고정 파일명과 생성된 Excel 바이너리
@@ -61,9 +59,7 @@ public class HistoryExportService implements HistoryExportUseCase {
     }
 
     /**
-     * 조건에 맞는 모든 파일 이력을 100건씩 조회해 Excel 문서로 생성한다.
-     *
-     * <p>생성 성공과 실패 모두 FILE_HISTORY 메뉴의 다운로드 감사 이력으로 기록한다.</p>
+     * 파일 이력을 Excel로 만들고 성공과 실패 감사 이력을 기록한다.
      *
      * @param command 파일 이력 검색 조건과 다운로드 사용자·IP
      * @return 고정 파일명과 생성된 Excel 바이너리
@@ -100,7 +96,6 @@ public class HistoryExportService implements HistoryExportUseCase {
                 .sheetName("로그인 이력")
                 .title("로그인/인증 이력 조회")
                 .noDataMessage("조회된 로그인/인증 이력이 없습니다.")
-                .generationErrorMessage("이력 Excel 파일 생성에 실패했습니다.")
                 .summaryDateRange("조회 기간", query.fromDate(), query.toDate())
                 .summary("인증 단계", authStepCondition(query.authStep()))
                 .summary("처리 결과", resultCondition(query.success()))
@@ -132,7 +127,6 @@ public class HistoryExportService implements HistoryExportUseCase {
                 .sheetName("파일 이력")
                 .title("파일 이력 조회")
                 .noDataMessage("조회된 파일 이력이 없습니다.")
-                .generationErrorMessage("이력 Excel 파일 생성에 실패했습니다.")
                 .summaryDateRange("조회 기간", query.fromDate(), query.toDate())
                 .summary("구분", ioTypeCondition(query.ioType()))
                 .summary("처리 결과", resultCondition(query.success()))
@@ -165,7 +159,9 @@ public class HistoryExportService implements HistoryExportUseCase {
                     source.conditionType(), source.keyword(), page, 100);
             var batch = loginHistoryPort.findPage(query);
             result.addAll(batch);
-            if (batch.size() < 100) return result;
+            if (batch.size() < 100) {
+                return result;
+            }
         }
     }
 
@@ -182,7 +178,9 @@ public class HistoryExportService implements HistoryExportUseCase {
                     source.conditionType(), source.keyword(), page, 100);
             var batch = fileHistoryPort.findPage(query);
             result.addAll(batch);
-            if (batch.size() < 100) return result;
+            if (batch.size() < 100) {
+                return result;
+            }
         }
     }
 
@@ -200,6 +198,9 @@ public class HistoryExportService implements HistoryExportUseCase {
 
     /**
      * 인증 단계 코드를 Excel 표시값으로 변환한다.
+     *
+     * @param value 변환할 인증 단계 코드
+     * @return Excel에 표시할 인증 단계
      */
     private String authStep(String value) {
         if (!hasText(value)) {
@@ -214,6 +215,9 @@ public class HistoryExportService implements HistoryExportUseCase {
 
     /**
      * 인증 단계 검색 조건을 상단 요약에 표시할 문구로 변환한다.
+     *
+     * @param value 검색 조건의 인증 단계
+     * @return 인증 단계 또는 전체 조건 문구
      */
     private String authStepCondition(String value) {
         return hasText(value) ? authStep(value) : "전체";
@@ -221,6 +225,9 @@ public class HistoryExportService implements HistoryExportUseCase {
 
     /**
      * 파일 처리 구분 코드를 Excel 표시값으로 변환한다.
+     *
+     * @param value 변환할 파일 처리 구분 코드
+     * @return Excel에 표시할 파일 처리 구분
      */
     private String ioType(String value) {
         if (!hasText(value)) {
@@ -231,6 +238,9 @@ public class HistoryExportService implements HistoryExportUseCase {
 
     /**
      * 파일 처리 구분 검색 조건을 상단 요약에 표시할 문구로 변환한다.
+     *
+     * @param value 검색 조건의 파일 처리 구분
+     * @return 파일 처리 구분 또는 전체 조건 문구
      */
     private String ioTypeCondition(String value) {
         return hasText(value) ? ioType(value) : "전체";
@@ -238,6 +248,9 @@ public class HistoryExportService implements HistoryExportUseCase {
 
     /**
      * 처리 성공 여부를 Excel 표시값으로 변환한다.
+     *
+     * @param success 처리 성공 여부
+     * @return 성공 또는 실패 문구
      */
     private String result(boolean success) {
         return success ? "성공" : "실패";
@@ -245,6 +258,9 @@ public class HistoryExportService implements HistoryExportUseCase {
 
     /**
      * 처리 결과 검색 조건을 상단 요약에 표시할 문구로 변환한다.
+     *
+     * @param success 검색 조건의 처리 성공 여부
+     * @return 처리 결과 또는 전체 조건 문구
      */
     private String resultCondition(Boolean success) {
         return success == null ? "전체" : result(success);
@@ -252,6 +268,10 @@ public class HistoryExportService implements HistoryExportUseCase {
 
     /**
      * 검색 필드와 키워드를 상단 요약에 표시할 문구로 변환한다.
+     *
+     * @param conditionType 검색 필드 구분
+     * @param keyword 검색 키워드
+     * @return 검색 필드와 키워드가 조합된 문구
      */
     private String searchCondition(String conditionType, String keyword) {
         if (!hasText(keyword)) {
@@ -269,6 +289,9 @@ public class HistoryExportService implements HistoryExportUseCase {
 
     /**
      * 문자열에 공백이 아닌 내용이 있는지 확인한다.
+     *
+     * @param value 확인할 문자열
+     * @return 공백이 아닌 내용이 있으면 {@code true}
      */
     private boolean hasText(String value) {
         return value != null && !value.isBlank();

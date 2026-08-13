@@ -87,7 +87,6 @@ public class UserExportService implements UserExportUseCase {
                 .sheetName("users")
                 .title("사용자 관리")
                 .noDataMessage("조회된 사용자가 없습니다.")
-                .generationErrorMessage("사용자 Excel 파일 생성에 실패했습니다.")
                 .summary("권한그룹", roleCondition(query.roleId(), roleNames))
                 .summary("사용여부", statusCondition(query.status()))
                 .summary("조회조건", searchCondition(query.conditionType(), query.keyword()))
@@ -106,6 +105,10 @@ public class UserExportService implements UserExportUseCase {
 
     /**
      * 권한 ID를 표시명으로 변환하고 같은 다운로드 안에서는 조회 결과를 재사용한다.
+     *
+     * @param roleId 표시명으로 변환할 권한 ID
+     * @param roleNames 조회한 권한명을 보관할 캐시
+     * @return 권한명 또는 조회할 수 없는 권한 ID
      */
     private String roleName(String roleId, Map<String, String> roleNames) {
         if (!hasText(roleId)) {
@@ -118,6 +121,10 @@ public class UserExportService implements UserExportUseCase {
 
     /**
      * 권한 검색 조건을 상단 요약에 표시할 문구로 변환한다.
+     *
+     * @param roleId 검색 조건의 권한 ID
+     * @param roleNames 조회한 권한명을 보관할 캐시
+     * @return 권한명 또는 전체 조건 문구
      */
     private String roleCondition(String roleId, Map<String, String> roleNames) {
         return hasText(roleId) ? roleName(roleId, roleNames) : "전체";
@@ -125,6 +132,9 @@ public class UserExportService implements UserExportUseCase {
 
     /**
      * 사용자 상태를 화면에서 읽기 쉬운 한글 값으로 변환한다.
+     *
+     * @param status 변환할 사용자 상태
+     * @return Excel에 표시할 사용자 상태
      */
     private String status(UserStatus status) {
         return status == UserStatus.ACTIVE ? "이용중" : "이용중지";
@@ -132,6 +142,9 @@ public class UserExportService implements UserExportUseCase {
 
     /**
      * 사용자 상태 검색 조건을 상단 요약에 표시할 문구로 변환한다.
+     *
+     * @param status 검색 조건의 사용자 상태
+     * @return 사용자 상태 또는 전체 조건 문구
      */
     private String statusCondition(String status) {
         if (!hasText(status) || "ALL".equalsIgnoreCase(status) || "전체".equals(status)) {
@@ -142,6 +155,10 @@ public class UserExportService implements UserExportUseCase {
 
     /**
      * 검색 필드와 키워드를 상단 요약에 표시할 문구로 변환한다.
+     *
+     * @param conditionType 검색 필드 구분
+     * @param keyword 검색 키워드
+     * @return 검색 필드와 키워드가 조합된 문구
      */
     private String searchCondition(String conditionType, String keyword) {
         if (!hasText(keyword)) {
@@ -185,6 +202,9 @@ public class UserExportService implements UserExportUseCase {
 
     /**
      * 문자열에 공백이 아닌 내용이 있는지 확인한다.
+     *
+     * @param value 확인할 문자열
+     * @return 공백이 아닌 내용이 있으면 {@code true}
      */
     private boolean hasText(String value) {
         return value != null && !value.isBlank();

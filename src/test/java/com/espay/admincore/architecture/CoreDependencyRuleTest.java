@@ -75,6 +75,38 @@ class CoreDependencyRuleTest {
     }
 
     /**
+     * 공통 Excel DSL이 프레임워크와 프로젝트 계층에 의존하지 않는지 확인한다.
+     *
+     * @throws IOException Java 소스 목록 또는 내용을 읽지 못한 경우
+     */
+    @Test
+    void commonExcelDependsOnlyOnJavaTypes() throws IOException {
+        assertNoForbiddenImports(MAIN_SOURCE.resolve("common/excel"), List.of(
+                "import org.springframework.",
+                "import org.apache.poi.",
+                "import jakarta.",
+                "import com.espay.admincore.application.",
+                "import com.espay.admincore.adapter.",
+                "import com.espay.admincore.config.",
+                "import com.espay.admincore.domain."
+        ));
+    }
+
+    /**
+     * POI 출력 어댑터가 도메인과 애플리케이션 서비스에 의존하지 않는지 확인한다.
+     *
+     * @throws IOException Java 소스 목록 또는 내용을 읽지 못한 경우
+     */
+    @Test
+    void excelAdapterDependsOnlyOnCommonExcelAndApplicationContracts() throws IOException {
+        assertNoForbiddenImports(MAIN_SOURCE.resolve("adapter/out/file/excel"), List.of(
+                "import com.espay.admincore.domain.",
+                "import com.espay.admincore.application.service.",
+                "import com.espay.admincore.application.dto."
+        ));
+    }
+
+    /**
      * 대상 소스 트리에서 금지된 import 문장을 수집하고 한 건도 없음을 검증한다.
      *
      * @param sourceRoot 검사할 계층의 Java 소스 루트

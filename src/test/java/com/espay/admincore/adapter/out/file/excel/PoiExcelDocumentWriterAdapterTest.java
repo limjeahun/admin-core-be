@@ -1,5 +1,6 @@
 package com.espay.admincore.adapter.out.file.excel;
 
+import com.espay.admincore.application.exception.ExcelDocumentWriteException;
 import com.espay.admincore.common.excel.ExcelAlignment;
 import com.espay.admincore.common.excel.ExcelDocument;
 import com.espay.admincore.common.excel.ExcelSummary;
@@ -14,6 +15,7 @@ import java.io.IOException;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class PoiExcelDocumentWriterAdapterTest {
     private final PoiExcelDocumentWriterAdapter writer = new PoiExcelDocumentWriterAdapter();
@@ -24,7 +26,6 @@ class PoiExcelDocumentWriterAdapterTest {
                 "users",
                 "사용자 관리",
                 "조회된 사용자가 없습니다.",
-                "사용자 Excel 파일 생성에 실패했습니다.",
                 List.of(
                         column("아이디", 18, ExcelAlignment.LEFT),
                         column("이름", 16, ExcelAlignment.LEFT),
@@ -81,7 +82,6 @@ class PoiExcelDocumentWriterAdapterTest {
                 "로그인 이력",
                 "로그인/인증 이력 조회",
                 "조회된 로그인/인증 이력이 없습니다.",
-                "이력 Excel 파일 생성에 실패했습니다.",
                 List.of(
                         column("접속일시", 20, ExcelAlignment.CENTER),
                         column("이름", 16, ExcelAlignment.LEFT),
@@ -120,7 +120,6 @@ class PoiExcelDocumentWriterAdapterTest {
                 "파일 이력",
                 "파일 이력 조회",
                 "조회된 파일 이력이 없습니다.",
-                "이력 Excel 파일 생성에 실패했습니다.",
                 List.of(
                         column("처리일시", 20, ExcelAlignment.CENTER),
                         column("아이디", 18, ExcelAlignment.LEFT),
@@ -146,10 +145,74 @@ class PoiExcelDocumentWriterAdapterTest {
         }
     }
 
+    @Test
+    void 한_개_컬럼_문서는_제목과_요약을_병합하지_않고_생성한다() throws IOException {
+        byte[] bytes = writer.write(new ExcelDocument(
+                "단일 컬럼",
+                "단일 컬럼 문서",
+                "조회 결과가 없습니다.",
+                List.of(column("값", 20, ExcelAlignment.LEFT)),
+                List.of(new ExcelSummary("조회 조건", "전체")),
+                List.of(List.of("데이터"))
+        ));
+
+        try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(bytes))) {
+            XSSFSheet sheet = workbook.getSheetAt(0);
+
+            assertThat(sheet.getNumMergedRegions()).isZero();
+            assertThat(sheet.getRow(0).getCell(0).getStringCellValue()).isEqualTo("단일 컬럼 문서");
+            assertThat(sheet.getRow(1).getCell(0).getStringCellValue()).isEqualTo("조회 조건: 전체");
+            assertThat(sheet.getRow(3).getCell(0).getStringCellValue()).isEqualTo("값");
+            assertThat(sheet.getRow(4).getCell(0).getStringCellValue()).isEqualTo("데이터");
+        }
+    }
+
+    @Test
+    void 한_개_컬럼의_빈_문서도_안내_문구를_병합하지_않고_생성한다() throws IOException {
+        byte[] bytes = writer.write(new ExcelDocument(
+                "빈 문서",
+                "빈 단일 컬럼 문서",
+                "조회 결과가 없습니다.",
+                List.of(column("값", 20, ExcelAlignment.LEFT)),
+                List.of(),
+                List.of()
+        ));
+
+        try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(bytes))) {
+            XSSFSheet sheet = workbook.getSheetAt(0);
+
+            assertThat(sheet.getNumMergedRegions()).isZero();
+            assertThat(sheet.getRow(3).getCell(0).getStringCellValue()).isEqualTo("조회 결과가 없습니다.");
+        }
+    }
+
+    @Test
+    void 문서_생성_오류를_애플리케이션_출력_예외로_변환한다() {
+        assertThatThrownBy(() -> writer.write(null))
+                .isInstanceOf(ExcelDocumentWriteException.class)
+                .hasMessage("Excel 문서를 생성하지 못했습니다.")
+                .hasCauseInstanceOf(NullPointerException.class);
+    }
+
+    /**
+     * 테스트에 사용할 일반 컬럼 표시 정보를 만든다.
+     *
+     * @param header 컬럼 헤더
+     * @param width 문자 단위 컬럼 너비
+     * @param alignment 본문 셀 정렬
+     * @return 일반 컬럼 표시 정보
+     */
     private ExcelDocument.Column column(String header, int width, ExcelAlignment alignment) {
         return new ExcelDocument.Column(header, width, alignment, List.of());
     }
 
+    /**
+     * 테스트에 사용할 결과 강조 컬럼 표시 정보를 만든다.
+     *
+     * @param header 컬럼 헤더
+     * @param width 문자 단위 컬럼 너비
+     * @return 결과 강조 컬럼 표시 정보
+     */
     private ExcelDocument.Column resultColumn(String header, int width) {
         return new ExcelDocument.Column(header, width, ExcelAlignment.CENTER, List.of("실패"));
     }

@@ -1,5 +1,6 @@
 package com.espay.admincore.application.port.out.file;
 
+import com.espay.admincore.application.exception.ExcelDocumentWriteException;
 import com.espay.admincore.common.excel.ExcelDocument;
 
 /**
@@ -13,6 +14,7 @@ public interface ExcelDocumentWriterPort {
      *
      * @param document 기술 중립적인 Excel 문서 모델
      * @return 생성된 XLSX 문서 바이트
+     * @throws ExcelDocumentWriteException 문서 생성에 실패한 경우
      */
     byte[] write(ExcelDocument document);
 }

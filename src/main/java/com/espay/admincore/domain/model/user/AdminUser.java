@@ -151,20 +151,48 @@ public final class AdminUser {
     }
 
     /**
-     * 인증 정보와 생성 시각은 유지하면서 사용자 프로필, 권한과 상태를 수정한다.
+     * 사용자명과 연락 정보를 새로운 프로필로 변경한다.
      *
      * @param name 변경할 사용자명
      * @param email 변경할 이메일 주소
      * @param phoneNo 변경할 연락처, 제거할 경우 {@code null}
      * @param deptName 변경할 소속 또는 부서명, 제거할 경우 {@code null}
-     * @param roleId 새로 부여할 활성 권한 ID
-     * @param status 변경할 사용자 활성 상태
-     * @return 변경 내용과 갱신된 수정 시각을 가진 사용자 Aggregate
+     * @return 프로필과 수정 시각이 갱신된 사용자 Aggregate
      */
-    public AdminUser update(String name, String email, String phoneNo, String deptName,
-                            String roleId, UserStatus status) {
+    public AdminUser changeProfile(String name, String email, String phoneNo, String deptName) {
         return new AdminUser(id, loginId, name, email, phoneNo, deptName, roleId, passwordHash,
                 otpSecret, lastLoginAt, status, createdAt, LocalDateTime.now());
+    }
+
+    /**
+     * 사용자에게 새로운 관리자 권한을 부여한다.
+     *
+     * @param roleId 새로 부여할 활성 권한 ID
+     * @return 권한과 수정 시각이 갱신된 사용자 Aggregate
+     */
+    public AdminUser assignRole(String roleId) {
+        return new AdminUser(id, loginId, name, email, phoneNo, deptName, roleId, passwordHash,
+                otpSecret, lastLoginAt, status, createdAt, LocalDateTime.now());
+    }
+
+    /**
+     * 사용자가 로그인과 보호 API를 사용할 수 있도록 활성화한다.
+     *
+     * @return 활성 상태와 수정 시각이 갱신된 사용자 Aggregate
+     */
+    public AdminUser activate() {
+        return new AdminUser(id, loginId, name, email, phoneNo, deptName, roleId, passwordHash,
+                otpSecret, lastLoginAt, UserStatus.ACTIVE, createdAt, LocalDateTime.now());
+    }
+
+    /**
+     * 사용자의 로그인과 보호 API 사용을 차단하도록 비활성화한다.
+     *
+     * @return 비활성 상태와 수정 시각이 갱신된 사용자 Aggregate
+     */
+    public AdminUser deactivate() {
+        return new AdminUser(id, loginId, name, email, phoneNo, deptName, roleId, passwordHash,
+                otpSecret, lastLoginAt, UserStatus.INACTIVE, createdAt, LocalDateTime.now());
     }
 
     /**
@@ -184,7 +212,7 @@ public final class AdminUser {
      * @param secret 새 Base32 TOTP 비밀키
      * @return 새 OTP 비밀키와 갱신된 수정 시각을 가진 사용자 Aggregate
      */
-    public AdminUser updateOtpSecret(String secret) {
+    public AdminUser registerOtpSecret(String secret) {
         return new AdminUser(id, loginId, name, email, phoneNo, deptName, roleId, passwordHash,
                 secret, lastLoginAt, status, createdAt, LocalDateTime.now());
     }
@@ -195,7 +223,7 @@ public final class AdminUser {
      * @param value 기록할 로그인 완료 시각
      * @return 최종 로그인 시각과 수정 시각이 갱신된 사용자 Aggregate
      */
-    public AdminUser updateLastLoginAt(LocalDateTime value) {
+    public AdminUser recordSuccessfulLogin(LocalDateTime value) {
         return new AdminUser(id, loginId, name, email, phoneNo, deptName, roleId, passwordHash,
                 otpSecret, value, status, createdAt, LocalDateTime.now());
     }

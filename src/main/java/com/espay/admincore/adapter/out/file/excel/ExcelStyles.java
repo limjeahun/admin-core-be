@@ -92,6 +92,13 @@ record ExcelStyles(
 
     /**
      * 글꼴, 배경, 정렬, 줄바꿈과 테두리가 적용된 셀 스타일을 생성한다.
+     *
+     * @param workbook 스타일을 소유할 워크북
+     * @param font 적용할 글꼴
+     * @param fillColor 적용할 배경색
+     * @param alignment 적용할 가로 정렬
+     * @param wrapText 자동 줄바꿈 여부
+     * @return 지정한 표시 속성이 적용된 셀 스타일
      */
     private static CellStyle createStyle(
             XSSFWorkbook workbook,
@@ -118,6 +125,11 @@ record ExcelStyles(
 
     /**
      * 본문용 정렬, 배경과 자동 줄바꿈이 적용된 스타일을 생성한다.
+     *
+     * @param workbook 스타일을 소유할 워크북
+     * @param alignment 적용할 가로 정렬
+     * @param fillColor 적용할 배경색
+     * @return 본문 셀 스타일
      */
     private static CellStyle createBodyStyle(
             XSSFWorkbook workbook,
@@ -129,6 +141,11 @@ record ExcelStyles(
 
     /**
      * 성공 또는 실패 결과를 강조하는 가운데 정렬 스타일을 생성한다.
+     *
+     * @param workbook 스타일을 소유할 워크북
+     * @param font 적용할 글꼴
+     * @param fillColor 적용할 배경색
+     * @return 결과 강조 셀 스타일
      */
     private static CellStyle createResultStyle(
             XSSFWorkbook workbook,

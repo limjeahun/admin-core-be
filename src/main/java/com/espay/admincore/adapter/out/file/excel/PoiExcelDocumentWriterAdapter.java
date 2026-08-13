@@ -1,5 +1,6 @@
 package com.espay.admincore.adapter.out.file.excel;
 
+import com.espay.admincore.application.exception.ExcelDocumentWriteException;
 import com.espay.admincore.application.port.out.file.ExcelDocumentWriterPort;
 import com.espay.admincore.common.excel.ExcelAlignment;
 import com.espay.admincore.common.excel.ExcelDocument;
@@ -15,6 +16,7 @@ import org.springframework.stereotype.Component;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * 기술 중립적인 Excel 문서 모델을 Apache POI 기반 XLSX로 렌더링하는 출력 어댑터.
@@ -23,10 +25,17 @@ import java.util.List;
 public class PoiExcelDocumentWriterAdapter implements ExcelDocumentWriterPort {
 
     /**
+     * POI 기반 Excel 출력 어댑터를 생성한다.
+     */
+    public PoiExcelDocumentWriterAdapter() {
+    }
+
+    /**
      * 공통 문서 모델의 제목, 요약, 컬럼과 본문을 XLSX로 생성한다.
      *
      * @param document 출력할 Excel 문서
      * @return 다운로드 응답에 사용할 XLSX 문서 바이트
+     * @throws ExcelDocumentWriteException 문서를 XLSX로 생성하지 못한 경우
      */
     @Override
     public byte[] write(ExcelDocument document) {
@@ -34,6 +43,7 @@ public class PoiExcelDocumentWriterAdapter implements ExcelDocumentWriterPort {
                 XSSFWorkbook workbook = new XSSFWorkbook();
                 ByteArrayOutputStream outputStream = new ByteArrayOutputStream()
         ) {
+            Objects.requireNonNull(document, "document");
             List<String> headers = document.columns().stream()
                     .map(ExcelDocument.Column::header)
                     .toList();
@@ -62,8 +72,8 @@ public class PoiExcelDocumentWriterAdapter implements ExcelDocumentWriterPort {
 
             workbook.write(outputStream);
             return outputStream.toByteArray();
-        } catch (IOException exception) {
-            throw new IllegalStateException(document.generationErrorMessage(), exception);
+        } catch (IOException | RuntimeException exception) {
+            throw new ExcelDocumentWriteException(exception);
         }
     }
 
@@ -103,7 +113,7 @@ public class PoiExcelDocumentWriterAdapter implements ExcelDocumentWriterPort {
         for (int columnIndex = 1; columnIndex < columnCount; columnIndex++) {
             titleRow.createCell(columnIndex).setCellStyle(styles.title());
         }
-        sheet.addMergedRegion(new CellRangeAddress(rowIndex, rowIndex, 0, columnCount - 1));
+        mergeWhenNeeded(sheet, rowIndex, 0, columnCount - 1);
         return rowIndex + 1;
     }
 
@@ -129,16 +139,22 @@ public class PoiExcelDocumentWriterAdapter implements ExcelDocumentWriterPort {
             row.setHeightInPoints(20);
 
             Cell labelCell = row.createCell(0);
+            if (columnCount == 1) {
+                labelCell.setCellValue(summary.label() + ": " + safeText(summary.value()));
+                labelCell.setCellStyle(styles.summaryValue());
+                rowIndex++;
+                continue;
+            }
+
             labelCell.setCellValue(safeText(summary.label()));
             labelCell.setCellStyle(styles.summaryLabel());
-
             Cell valueCell = row.createCell(1);
             valueCell.setCellValue(safeText(summary.value()));
             valueCell.setCellStyle(styles.summaryValue());
             for (int columnIndex = 2; columnIndex < columnCount; columnIndex++) {
                 row.createCell(columnIndex).setCellStyle(styles.summaryValue());
             }
-            sheet.addMergedRegion(new CellRangeAddress(rowIndex, rowIndex, 1, columnCount - 1));
+            mergeWhenNeeded(sheet, rowIndex, 1, columnCount - 1);
             rowIndex++;
         }
         return rowIndex;
@@ -208,7 +224,7 @@ public class PoiExcelDocumentWriterAdapter implements ExcelDocumentWriterPort {
         for (int columnIndex = 1; columnIndex < columnCount; columnIndex++) {
             row.createCell(columnIndex).setCellStyle(styles.empty());
         }
-        sheet.addMergedRegion(new CellRangeAddress(rowIndex, rowIndex, 0, columnCount - 1));
+        mergeWhenNeeded(sheet, rowIndex, 0, columnCount - 1);
     }
 
     /**
@@ -271,6 +287,20 @@ public class PoiExcelDocumentWriterAdapter implements ExcelDocumentWriterPort {
     private void applyColumnWidths(Sheet sheet, List<ExcelDocument.Column> columns) {
         for (int columnIndex = 0; columnIndex < columns.size(); columnIndex++) {
             sheet.setColumnWidth(columnIndex, columns.get(columnIndex).width() * 256);
+        }
+    }
+
+    /**
+     * 둘 이상의 셀로 구성된 영역만 병합한다.
+     *
+     * @param sheet 셀 영역을 병합할 시트
+     * @param rowIndex 병합할 행 인덱스
+     * @param fromColumn 병합 시작 컬럼 인덱스
+     * @param toColumn 병합 종료 컬럼 인덱스
+     */
+    private void mergeWhenNeeded(Sheet sheet, int rowIndex, int fromColumn, int toColumn) {
+        if (fromColumn < toColumn) {
+            sheet.addMergedRegion(new CellRangeAddress(rowIndex, rowIndex, fromColumn, toColumn));
         }
     }
 

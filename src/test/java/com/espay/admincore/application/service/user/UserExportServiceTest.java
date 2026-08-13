@@ -2,6 +2,7 @@ package com.espay.admincore.application.service.user;
 
 import com.espay.admincore.application.dto.user.DownloadUsersExcelCommand;
 import com.espay.admincore.application.dto.user.UserQuery;
+import com.espay.admincore.application.exception.ExcelDocumentWriteException;
 import com.espay.admincore.application.port.out.file.ExcelDocumentWriterPort;
 import com.espay.admincore.application.port.out.history.FileHistoryPersistencePort;
 import com.espay.admincore.application.port.out.role.RolePersistencePort;
@@ -18,11 +19,13 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -88,5 +91,23 @@ class UserExportServiceTest {
         verify(fileHistoryPersistencePort).save(historyCaptor.capture());
         assertThat(historyCaptor.getValue().isSuccess()).isTrue();
         assertThat(historyCaptor.getValue().getMenuCode()).isEqualTo("USERS");
+    }
+
+    @Test
+    void Excel_출력_실패를_감사_이력에_기록하고_예외를_전파한다() {
+        UserQuery query = UserQuery.of(null, null, null, null, 0, 10);
+        ExcelDocumentWriteException writeException =
+                new ExcelDocumentWriteException(new IOException("write failed"));
+        when(userSearchPort.findPage(any(UserQuery.class))).thenReturn(List.of());
+        when(writer.write(any(ExcelDocument.class))).thenThrow(writeException);
+
+        assertThatThrownBy(() -> service.downloadUsersExcel(
+                DownloadUsersExcelCommand.of(query, "7", "127.0.0.1")
+        )).isSameAs(writeException);
+
+        ArgumentCaptor<FileHistory> historyCaptor = ArgumentCaptor.forClass(FileHistory.class);
+        verify(fileHistoryPersistencePort).save(historyCaptor.capture());
+        assertThat(historyCaptor.getValue().isSuccess()).isFalse();
+        assertThat(historyCaptor.getValue().getFailReason()).isEqualTo("Excel 문서를 생성하지 못했습니다.");
     }
 }

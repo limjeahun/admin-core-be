@@ -1,12 +1,11 @@
 package com.espay.admincore.common.excel;
 
-/**
- * Excel 본문 셀의 가로 정렬 방식.
- *
- * <p>Apache POI와 같은 특정 라이브러리 타입을 공통 문서 모델에 노출하지 않기 위해 사용한다.</p>
- */
+/** 출력 라이브러리 타입을 노출하지 않는 Excel 본문 셀 정렬 방식. */
 public enum ExcelAlignment {
+    /** 왼쪽 정렬. */
     LEFT,
+    /** 가운데 정렬. */
     CENTER,
+    /** 오른쪽 정렬. */
     RIGHT
 }

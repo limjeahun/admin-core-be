@@ -64,18 +64,18 @@ public class UserService implements UserCommandUseCase, UserQueryUseCase {
     @Transactional
     public UserResult updateUser(UpdateUserCommand command) {
         AdminUser user = find(command.userId());
-        String roleId = command.roleId() == null || command.roleId().isBlank() ? user.getRoleId() : command.roleId();
+        AdminUser updated = applyProfileChange(user, command);
+
+        String roleId = hasText(command.roleId()) ? command.roleId() : user.getRoleId();
         AdminRole role = activeRole(roleId);
-        String email = command.email() == null || command.email().isBlank() ? user.getEmail() : command.email().trim();
-        ensureEmailAvailable(email, user.getId());
-        AdminUser updated = user.update(
-                command.name() == null || command.name().isBlank() ? user.getName() : command.name().trim(),
-                email,
-                command.phoneNo() == null ? user.getPhoneNo() : command.phoneNo(),
-                command.deptName() == null ? user.getDeptName() : command.deptName(),
-                role.getId(),
-                command.status() == null || command.status().isBlank() ? user.getStatus() : status(command.status())
-        );
+        if (hasText(command.roleId())) {
+            updated = updated.assignRole(role.getId());
+        }
+        if (hasText(command.status())) {
+            updated = status(command.status()) == UserStatus.ACTIVE
+                    ? updated.activate()
+                    : updated.deactivate();
+        }
         return UserResult.from(userPersistencePort.save(updated), role);
     }
 
@@ -141,6 +141,43 @@ public class UserService implements UserCommandUseCase, UserQueryUseCase {
     }
 
     /**
+     * 요청에 프로필 변경값이 있으면 기존 값과 조합해 사용자 프로필을 변경한다.
+     *
+     * @param user 변경할 사용자
+     * @param command 선택적인 사용자 변경값
+     * @return 프로필이 변경됐거나 기존 상태를 유지한 사용자
+     */
+    private AdminUser applyProfileChange(AdminUser user, UpdateUserCommand command) {
+        if (!hasProfileChange(command)) {
+            return user;
+        }
+
+        String email = hasText(command.email()) ? command.email().trim() : user.getEmail();
+        if (hasText(command.email())) {
+            ensureEmailAvailable(email, user.getId());
+        }
+        return user.changeProfile(
+                hasText(command.name()) ? command.name().trim() : user.getName(),
+                email,
+                command.phoneNo() == null ? user.getPhoneNo() : command.phoneNo(),
+                command.deptName() == null ? user.getDeptName() : command.deptName()
+        );
+    }
+
+    /**
+     * 사용자 수정 명령에 하나 이상의 프로필 변경값이 있는지 확인한다.
+     *
+     * @param command 확인할 사용자 수정 명령
+     * @return 프로필 변경값이 있으면 {@code true}
+     */
+    private boolean hasProfileChange(UpdateUserCommand command) {
+        return hasText(command.name())
+                || hasText(command.email())
+                || command.phoneNo() != null
+                || command.deptName() != null;
+    }
+
+    /**
      * 사용자에게 부여할 권한이 존재하고 활성 상태인지 확인한다.
      *
      * @param roleId 권한 ID
@@ -178,5 +215,15 @@ public class UserService implements UserCommandUseCase, UserQueryUseCase {
         userLookupPort.findByEmail(email).filter(user -> currentUserId == null
                         || !currentUserId.equals(user.getId()))
                 .ifPresent(user -> { throw new BusinessException(ErrorCode.USER_DUPLICATE, "이미 사용 중인 이메일입니다."); });
+    }
+
+    /**
+     * 문자열에 공백이 아닌 내용이 있는지 확인한다.
+     *
+     * @param value 확인할 문자열
+     * @return 공백이 아닌 내용이 있으면 {@code true}
+     */
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 }

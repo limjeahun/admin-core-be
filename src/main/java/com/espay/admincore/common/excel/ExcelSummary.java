@@ -10,6 +10,12 @@ import java.util.Objects;
  */
 public record ExcelSummary(String label, String value) {
 
+    /**
+     * 요약 이름을 검증하고 null 표시값을 빈 문자열로 변환한다.
+     *
+     * @param label 요약 항목 이름
+     * @param value 화면에 표시할 값
+     */
     public ExcelSummary {
         if (label == null || label.isBlank()) {
             throw new IllegalArgumentException("Excel summary label must not be blank");
