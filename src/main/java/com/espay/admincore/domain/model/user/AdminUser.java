@@ -113,12 +113,36 @@ public final class AdminUser {
      * @param updatedAt 최종 수정 시각
      * @return 영속 상태로 복원된 사용자 Aggregate
      */
-    public static AdminUser reconstitute(String id, String loginId, String name, String email, String phoneNo,
-                                         String deptName, String roleId, String passwordHash, String otpSecret,
-                                         LocalDateTime lastLoginAt, UserStatus status, LocalDateTime createdAt,
-                                         LocalDateTime updatedAt) {
-        return new AdminUser(id, loginId, name, email, phoneNo, deptName, roleId, passwordHash, otpSecret,
-                lastLoginAt, status, createdAt, updatedAt);
+    public static AdminUser reconstitute(
+            String id,
+            String loginId,
+            String name,
+            String email,
+            String phoneNo,
+            String deptName,
+            String roleId,
+            String passwordHash,
+            String otpSecret,
+            LocalDateTime lastLoginAt,
+            UserStatus status,
+            LocalDateTime createdAt,
+            LocalDateTime updatedAt
+    ) {
+        return new AdminUser(
+                id,
+                loginId,
+                name,
+                email,
+                phoneNo,
+                deptName,
+                roleId,
+                passwordHash,
+                otpSecret,
+                lastLoginAt,
+                status,
+                createdAt,
+                updatedAt
+        );
     }
 
     /**

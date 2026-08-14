@@ -22,12 +22,15 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -64,7 +67,7 @@ class UserExportServiceTest {
         );
         AdminRole role = AdminRole.reconstitute("1", "MASTER", "마스터 권한", true, createdAt, createdAt);
         when(userSearchPort.findPage(any(UserQuery.class))).thenReturn(List.of(user));
-        when(rolePersistencePort.findById("1")).thenReturn(Optional.of(role));
+        when(rolePersistencePort.findByIds(Set.of("1"))).thenReturn(List.of(role));
         when(writer.write(any(ExcelDocument.class))).thenReturn(new byte[]{1, 2, 3});
 
         service.downloadUsersExcel(DownloadUsersExcelCommand.of(query, "7", "127.0.0.1"));
@@ -91,6 +94,50 @@ class UserExportServiceTest {
         verify(fileHistoryPersistencePort).save(historyCaptor.capture());
         assertThat(historyCaptor.getValue().isSuccess()).isTrue();
         assertThat(historyCaptor.getValue().getMenuCode()).isEqualTo("USERS");
+        verify(rolePersistencePort).findByIds(Set.of("1"));
+        verify(rolePersistencePort, never()).findById(anyString());
+    }
+
+    @Test
+    void 같은_권한은_중복을_제거해_한번에_조회한다() {
+        UserQuery query = UserQuery.of(null, null, null, null, 0, 10);
+        LocalDateTime now = LocalDateTime.of(2026, 8, 1, 9, 0);
+        AdminUser first = AdminUser.reconstitute(
+                "7", "master", "초기 관리자", "master@example.com", null, null,
+                "1", "password-hash", null, null, UserStatus.ACTIVE, now, now
+        );
+        AdminUser second = AdminUser.reconstitute(
+                "8", "operator", "운영 관리자", "operator@example.com", null, null,
+                "1", "password-hash", null, null, UserStatus.ACTIVE, now, now
+        );
+        AdminRole role = AdminRole.reconstitute("1", "MASTER", "마스터 권한", true, now, now);
+        when(userSearchPort.findPage(any(UserQuery.class))).thenReturn(List.of(first, second));
+        when(rolePersistencePort.findByIds(Set.of("1"))).thenReturn(List.of(role));
+        when(writer.write(any(ExcelDocument.class))).thenReturn(new byte[]{1});
+
+        service.downloadUsersExcel(DownloadUsersExcelCommand.of(query, "7", "127.0.0.1"));
+
+        verify(rolePersistencePort).findByIds(Set.of("1"));
+        verify(rolePersistencePort, never()).findById(anyString());
+    }
+
+    @Test
+    void 조회된_사용자가_없어도_검색조건의_권한명을_요약에_표시한다() {
+        UserQuery query = UserQuery.of("1", null, null, null, 0, 10);
+        LocalDateTime now = LocalDateTime.of(2026, 8, 1, 9, 0);
+        AdminRole role = AdminRole.reconstitute("1", "MASTER", "마스터 권한", true, now, now);
+        when(userSearchPort.findPage(any(UserQuery.class))).thenReturn(List.of());
+        when(rolePersistencePort.findByIds(Set.of("1"))).thenReturn(List.of(role));
+        when(writer.write(any(ExcelDocument.class))).thenReturn(new byte[]{1});
+
+        service.downloadUsersExcel(DownloadUsersExcelCommand.of(query, "7", "127.0.0.1"));
+
+        ArgumentCaptor<ExcelDocument> documentCaptor = ArgumentCaptor.forClass(ExcelDocument.class);
+        verify(writer).write(documentCaptor.capture());
+        assertThat(documentCaptor.getValue().summaries())
+                .extracting(summary -> summary.label() + "=" + summary.value())
+                .contains("권한그룹=MASTER");
+        verify(rolePersistencePort).findByIds(Set.of("1"));
     }
 
     @Test
@@ -109,5 +156,6 @@ class UserExportServiceTest {
         verify(fileHistoryPersistencePort).save(historyCaptor.capture());
         assertThat(historyCaptor.getValue().isSuccess()).isFalse();
         assertThat(historyCaptor.getValue().getFailReason()).isEqualTo("Excel 문서를 생성하지 못했습니다.");
+        verifyNoInteractions(rolePersistencePort);
     }
 }

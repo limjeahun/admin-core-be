@@ -9,7 +9,9 @@ import com.espay.admincore.domain.model.role.AdminRole;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -42,6 +44,24 @@ public class RolePersistenceAdapter implements RolePersistencePort {
     @Override
     public Optional<AdminRole> findById(String roleId) {
         return repository.findById(Long.valueOf(roleId)).map(mapper::toDomain);
+    }
+
+    /**
+     * 문자열 권한 ID를 DB 식별자 타입으로 변환하여 한 번에 조회한다.
+     *
+     * @param roleIds 조회할 권한 ID 목록
+     * @return 조회된 권한 도메인 모델 목록
+     * @throws NullPointerException 권한 ID 목록이 {@code null}인 경우
+     */
+    @Override
+    public List<AdminRole> findByIds(Collection<String> roleIds) {
+        Objects.requireNonNull(roleIds, "roleIds");
+        List<Long> ids = roleIds.stream()
+                .map(Long::valueOf)
+                .toList();
+        return repository.findAllById(ids).stream()
+                .map(mapper::toDomain)
+                .toList();
     }
 
     /**

@@ -12,6 +12,7 @@ import com.espay.admincore.common.excel.ExcelColumn;
 import com.espay.admincore.common.excel.ExcelDocument;
 import com.espay.admincore.common.excel.ExcelPipeline;
 import com.espay.admincore.domain.model.file.FileHistory;
+import com.espay.admincore.domain.model.role.AdminRole;
 import com.espay.admincore.domain.model.user.AdminUser;
 import com.espay.admincore.domain.model.user.UserStatus;
 import lombok.RequiredArgsConstructor;
@@ -19,9 +20,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * 조건에 맞는 전체 사용자와 권한명을 Excel로 만들고 다운로드 감사 이력을 기록하는 서비스.
@@ -48,7 +51,8 @@ public class UserExportService implements UserExportUseCase {
         try {
             UserQuery query = command.query();
             List<AdminUser> users = allUsers(query);
-            byte[] bytes = writer.write(usersDocument(query, users));
+            Map<String, String> roleNames = loadRoleNames(query, users);
+            byte[] bytes = writer.write(usersDocument(query, users, roleNames));
             fileHistoryPersistencePort.save(
                     FileHistory.downloadSucceeded(
                             command.userId(),
@@ -78,11 +82,14 @@ public class UserExportService implements UserExportUseCase {
      *
      * @param query 사용자 검색 조건
      * @param users Excel에 포함할 전체 사용자 목록
+     * @param roleNames 권한 ID별 표시명
      * @return 출력 어댑터에 전달할 사용자 Excel 문서
      */
-    private ExcelDocument usersDocument(UserQuery query, List<AdminUser> users) {
-        Map<String, String> roleNames = new HashMap<>();
-
+    private ExcelDocument usersDocument(
+            UserQuery query,
+            List<AdminUser> users,
+            Map<String, String> roleNames
+    ) {
         return ExcelPipeline.from(users)
                 .sheetName("users")
                 .title("사용자 관리")
@@ -104,26 +111,48 @@ public class UserExportService implements UserExportUseCase {
     }
 
     /**
-     * 권한 ID를 표시명으로 변환하고 같은 다운로드 안에서는 조회 결과를 재사용한다.
+     * 사용자 권한과 검색 조건 권한을 한 번에 조회해 권한명으로 변환한다.
+     *
+     * @param query 사용자 검색 조건
+     * @param users Excel에 포함할 사용자 목록
+     * @return 권한 ID와 권한명으로 구성된 불변 Map
+     */
+    private Map<String, String> loadRoleNames(UserQuery query, List<AdminUser> users) {
+        Set<String> roleIds = Stream.concat(
+                        users.stream().map(AdminUser::getRoleId),
+                        Stream.ofNullable(query.roleId())
+                )
+                .filter(this::hasText)
+                .collect(Collectors.toUnmodifiableSet());
+        if (roleIds.isEmpty()) {
+            return Map.of();
+        }
+        return rolePersistencePort.findByIds(roleIds).stream()
+                .collect(Collectors.toUnmodifiableMap(
+                        AdminRole::getId,
+                        AdminRole::getName
+                ));
+    }
+
+    /**
+     * 권한 ID를 미리 조회한 권한명으로 변환한다.
      *
      * @param roleId 표시명으로 변환할 권한 ID
-     * @param roleNames 조회한 권한명을 보관할 캐시
+     * @param roleNames 권한 ID별 표시명
      * @return 권한명 또는 조회할 수 없는 권한 ID
      */
     private String roleName(String roleId, Map<String, String> roleNames) {
         if (!hasText(roleId)) {
             return "";
         }
-        return roleNames.computeIfAbsent(roleId, id -> rolePersistencePort.findById(id)
-                .map(role -> role.getName())
-                .orElse(id));
+        return roleNames.getOrDefault(roleId, roleId);
     }
 
     /**
      * 권한 검색 조건을 상단 요약에 표시할 문구로 변환한다.
      *
      * @param roleId 검색 조건의 권한 ID
-     * @param roleNames 조회한 권한명을 보관할 캐시
+     * @param roleNames 권한 ID별 표시명
      * @return 권한명 또는 전체 조건 문구
      */
     private String roleCondition(String roleId, Map<String, String> roleNames) {

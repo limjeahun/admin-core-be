@@ -3,6 +3,7 @@ package com.espay.admincore.application.port.out.role;
 import com.espay.admincore.application.dto.role.RoleQuery;
 import com.espay.admincore.domain.model.role.AdminRole;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -26,6 +27,14 @@ public interface RolePersistencePort {
      * @return 조회된 권한 또는 빈 값
      */
     Optional<AdminRole> findById(String roleId);
+
+    /**
+     * 여러 권한 ID에 해당하는 권한을 한 번에 조회한다.
+     *
+     * @param roleIds 조회할 권한 ID 목록
+     * @return 조회된 권한 목록
+     */
+    List<AdminRole> findByIds(Collection<String> roleIds);
 
     /**
      * 권한명으로 권한을 조회한다.
