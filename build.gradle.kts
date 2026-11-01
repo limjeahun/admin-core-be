@@ -1,5 +1,6 @@
 plugins {
     java
+    war
     id("org.springframework.boot") version "3.3.7"
     id("io.spring.dependency-management") version "1.1.6"
 }
@@ -15,6 +16,7 @@ java {
 
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
+    providedRuntime("org.springframework.boot:spring-boot-starter-tomcat")
     implementation("org.springframework.boot:spring-boot-starter-validation")
     implementation("org.springframework.boot:spring-boot-starter-security")
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
@@ -54,4 +56,8 @@ tasks.withType<JavaCompile> {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+}
+
+tasks.named<org.springframework.boot.gradle.tasks.bundling.BootWar>("bootWar") {
+    archiveFileName.set("admin-core.war")
 }
