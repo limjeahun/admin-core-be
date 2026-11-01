@@ -9,36 +9,12 @@ pipeline {
         buildDiscarder(logRotator(numToKeepStr: '10'))
     }
 
-    parameters {
-        string(name: 'TOMCAT_SSH_HOST', defaultValue: 'ubuntu-server-lab.mshome.net', trim: true,
-            description: 'VM SSH host reachable from the Jenkins container')
-        string(name: 'TOMCAT_SSH_PORT', defaultValue: '22', trim: true,
-            description: 'Ubuntu VM SSH port (direct: 22; optional Windows forward: 2222)')
-    }
-
     environment {
-        TOMCAT_KNOWN_HOSTS = '/var/jenkins_home/.ssh/ubuntu-vm-known-hosts'
+        TOMCAT_DEPLOY_ROOT = '/var/jenkins_home/deploy/admin-core-tomcat'
+        TOMCAT_HEALTH_URL = 'http://ubuntu-lab:8080/admin-core/actuator/health'
     }
 
     stages {
-        stage('Validate VM target') {
-            steps {
-                script {
-                    def host = params.TOMCAT_SSH_HOST.trim()
-                    def port = params.TOMCAT_SSH_PORT.trim()
-                    if (!(host ==~ /[A-Za-z0-9][A-Za-z0-9.-]{0,252}/)) {
-                        error('TOMCAT_SSH_HOST must be a DNS name or IPv4 address.')
-                    }
-                    if (!(port ==~ /[0-9]{1,5}/) || port.toInteger() < 1 || port.toInteger() > 65535) {
-                        error('TOMCAT_SSH_PORT must be between 1 and 65535.')
-                    }
-                    env.TOMCAT_SSH_HOST = host
-                    env.TOMCAT_SSH_PORT = port.toInteger().toString()
-                }
-                sh 'test -s "$TOMCAT_KNOWN_HOSTS"'
-            }
-        }
-
         stage('Checkout GitHub') {
             steps {
                 deleteDir()
@@ -48,7 +24,7 @@ pipeline {
                         error('Checkout did not return a complete Git commit ID.')
                     }
                     env.SOURCE_COMMIT = source.GIT_COMMIT
-                    currentBuild.description = "GitHub: ${env.SOURCE_COMMIT.take(12)} -> Ubuntu VM"
+                    currentBuild.description = "GitHub: ${env.SOURCE_COMMIT.take(12)} -> Docker Tomcat"
                     writeFile file: 'source-commit.txt', text: env.SOURCE_COMMIT + '\n'
                 }
                 sh 'java -version'
@@ -58,35 +34,107 @@ pipeline {
 
         stage('Test and build WAR') {
             steps {
-                sh 'sh ./gradlew --no-daemon --max-workers=4 clean test bootWar'
+                sh 'sh ./gradlew --no-daemon --max-workers=4 --no-build-cache clean test bootWar'
+                sh '''
+                    set -eu
+                    war="$(pwd -P)/build/libs/admin-core.war"
+                    test -f "$war" && test ! -L "$war"
+                    test "$(realpath -e "$war")" = "$war"
+                    jar tf "$war" > build/war-entries.txt
+                    grep -Fxq 'WEB-INF/classes/com/espay/admincore/AdminCoreServletInitializer.class' build/war-entries.txt
+                    grep -Fxq 'META-INF/MANIFEST.MF' build/war-entries.txt
+                    grep -Eq '^WEB-INF/lib/[^/]+[.]jar$' build/war-entries.txt
+                    sha256sum build/libs/admin-core.war > build/admin-core.war.sha256
+                '''
             }
         }
 
-        stage('Deploy to VM Tomcat') {
+        stage('Deploy to Docker Tomcat') {
             steps {
-                withCredentials([sshUserPrivateKey(
-                    credentialsId: 'ubuntu-vm-tomcat',
-                    keyFileVariable: 'VM_SSH_KEY',
-                    usernameVariable: 'VM_SSH_USER'
-                )]) {
+                sh '''
+                    set -eu
+                    webapps="$TOMCAT_DEPLOY_ROOT/webapps"
+                    staging="$TOMCAT_DEPLOY_ROOT/staging"
+                    backups="$TOMCAT_DEPLOY_ROOT/backups"
+                    target="$webapps/admin-core.war"
+                    previous="$backups/previous-admin-core.war"
+                    upload=''
+                    backup_upload=''
+                    cleanup() {
+                        test -z "$upload" || rm -f -- "$upload"
+                        test -z "$backup_upload" || rm -f -- "$backup_upload"
+                    }
+                    trap cleanup EXIT
+
+                    # Only webapps is mounted into ubuntu-lab. Staging and backups
+                    # remain outside the application's mount, on the same volume.
+                    test -d "$TOMCAT_DEPLOY_ROOT" && test ! -L "$TOMCAT_DEPLOY_ROOT"
+                    test "$(realpath -e "$TOMCAT_DEPLOY_ROOT")" = "$TOMCAT_DEPLOY_ROOT"
+                    test -d "$webapps" && test ! -L "$webapps"
+                    test "$(realpath -e "$webapps")" = "$webapps"
+                    for directory in "$staging" "$backups"; do
+                        test ! -L "$directory"
+                        if test ! -d "$directory"; then
+                            mkdir -m 0700 -- "$directory"
+                        fi
+                        test "$(realpath -e "$directory")" = "$directory"
+                        test "$(stat -c '%u' "$directory")" = "$(id -u)"
+                        test "$(stat -c '%d' "$directory")" = "$(stat -c '%d' "$webapps")"
+                    done
+                    test -w "$webapps"
+
+                    upload=$(mktemp "$staging/admin-core.XXXXXXXX.war.upload")
+                    cp -P -- build/libs/admin-core.war "$upload"
+                    test -f "$upload" && test ! -L "$upload"
+                    chmod 0640 -- "$upload"
+                    expected_sha=$(cut -d ' ' -f 1 build/admin-core.war.sha256)
+                    test "$(sha256sum "$upload" | cut -d ' ' -f 1)" = "$expected_sha"
+
+                    if test -e "$target" || test -L "$target"; then
+                        test -f "$target" && test ! -L "$target"
+                        test "$(realpath -e "$target")" = "$target"
+                        backup_upload=$(mktemp "$backups/previous.XXXXXXXX.war.upload")
+                        # -P copies a raced source symlink instead of following it.
+                        cp -P -- "$target" "$backup_upload"
+                        test -f "$backup_upload" && test ! -L "$backup_upload"
+                        chmod 0600 -- "$backup_upload"
+                        mv -fT -- "$backup_upload" "$previous"
+                        backup_upload=''
+                    fi
+
+                    # autoDeploy=true must observe removal before the new WAR
+                    # appears, so an old healthy context cannot pass this build.
+                    rm -f -- "$target"
+                    attempt=0
+                    while :; do
+                        code=$(curl --silent --connect-timeout 2 --max-time 5 \
+                            -o /dev/null -w '%{http_code}' "$TOMCAT_HEALTH_URL" || true)
+                        test "$code" != 404 || break
+                        attempt=$((attempt + 1))
+                        if test "$attempt" -ge 30; then
+                            printf 'Previous application did not undeploy to HTTP 404. Check Tomcat autoDeploy.\\n' >&2
+                            exit 1
+                        fi
+                        sleep 2
+                    done
+                    mv -fT -- "$upload" "$target"
+                    upload=''
+                '''
+            }
+        }
+
+        stage('Verify application') {
+            steps {
+                timeout(time: 180, unit: 'SECONDS') {
                     sh '''
-                        set +x
                         set -eu
-                        test "$VM_SSH_USER" = deploy
-                        case "$BUILD_NUMBER" in ''|*[!0-9]*) exit 1 ;; esac
-                        upload_name="admin-core-${SOURCE_COMMIT}-${BUILD_NUMBER}.war.upload"
-                        war_sha=$(sha256sum build/libs/admin-core.war | cut -d ' ' -f 1)
-                        scp -P "$TOMCAT_SSH_PORT" -o BatchMode=yes -o ConnectTimeout=10 \
-                            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$TOMCAT_KNOWN_HOSTS" \
-                            -i "$VM_SSH_KEY" build/libs/admin-core.war \
-                            "$VM_SSH_USER@$TOMCAT_SSH_HOST:/var/lib/admin-core-deploy/incoming/$upload_name"
-                        ssh -p "$TOMCAT_SSH_PORT" -o BatchMode=yes -o ConnectTimeout=10 \
-                            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$TOMCAT_KNOWN_HOSTS" \
-                            -i "$VM_SSH_KEY" "$VM_SSH_USER@$TOMCAT_SSH_HOST" \
-                            "sudo -n /usr/local/sbin/deploy-admin-core '$upload_name' '$war_sha'" \
-                            > build/tomcat-health.json
-                        grep -Eq '"status"[[:space:]]*:[[:space:]]*"UP"' build/tomcat-health.json
+                        until curl --fail --silent --connect-timeout 2 --max-time 5 \
+                            "$TOMCAT_HEALTH_URL" > build/tomcat-health.json && \
+                            grep -Eq '^[[:space:]]*[{][[:space:]]*"status"[[:space:]]*:[[:space:]]*"UP"[[:space:]]*[,}]' build/tomcat-health.json; do
+                            sleep 2
+                        done
                         cat build/tomcat-health.json
+                        cat build/admin-core.war.sha256
                     '''
                 }
             }
@@ -98,7 +146,7 @@ pipeline {
             junit allowEmptyResults: true, testResults: 'build/test-results/test/*.xml'
         }
         success {
-            archiveArtifacts artifacts: 'build/libs/admin-core.war,source-commit.txt,build/tomcat-health.json', fingerprint: true
+            archiveArtifacts artifacts: 'build/libs/admin-core.war,source-commit.txt,build/admin-core.war.sha256,build/tomcat-health.json', fingerprint: true
         }
     }
 }
